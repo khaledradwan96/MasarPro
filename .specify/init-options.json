@@ -1,8 +1,8 @@
 {
   "ai": "gemini",
   "feature_numbering": "sequential",
-  "here": true,
+  "here": false,
   "integration": "gemini",
-  "script": "py",
-  "speckit_version": "1.0.9.dev0"
+  "script": "ps",
+  "speckit_version": "1.0.8"
 }
