@@ -1,5 +1,5 @@
 # MasarPro Constitution
-**Version:** 1.2.0
+**Version:** 1.3.0
 **Last Update:** 2026-09-20
 **Status:** Active
 
@@ -15,6 +15,10 @@ intelligence.
 
 MasarPro MUST be built as a multi-user product with per-account data
 isolation from day one, even if only one person uses it at first.
+MasarPro is being built for solo use initially, with a planned future
+public release to other users; the security, privacy, and data-ownership
+principles in this constitution MUST be treated as binding from day one
+rather than deferred until other users are onboarded.
 
 Authentication MUST be email and password via Supabase Auth.
 
@@ -27,6 +31,11 @@ Jobs in MasarPro MUST include:
 
 * A personal job-application tracker (saved jobs, status, notes)
 * AI matching and recommendations against the user profile
+
+Job matching MUST use rule-based filtering (e.g., location, role type,
+seniority) combined with LLM-based scoring against job descriptions.
+A vector-embedding/similarity-search architecture is NOT required
+unless a future architectural decision states otherwise.
 
 ---
 
@@ -45,6 +54,10 @@ MUST NOT be used as the main API.
 
 The production FastAPI host is an explicit later decision and MUST be
 recorded in an architectural decision when chosen.
+
+Database migration tooling (e.g., Supabase CLI migrations, Alembic) is
+likewise an explicit later decision and MUST be recorded in an
+architectural decision when chosen.
 
 Next.js MUST serve pages and SSR. FastAPI MUST own AI and other heavy
 APIs. The frontend MUST NOT become the place for AI inference or
@@ -65,6 +78,20 @@ during import or AI merge of jobs, skills, and experiences.
 Users MUST be able to export their owned data and to fully delete their
 account and owned data (PostgreSQL rows, stored files, and AI
 artifacts).
+
+Account deletion MUST remove the user's PostgreSQL rows, stored files,
+and AI artifacts from primary storage immediately. Backups containing
+deleted user data MAY persist for up to one month under a fixed backup
+retention window before permanent purge. This retention window MUST be
+disclosed to users as part of the account-deletion flow.
+
+Because MasarPro is planned to open to other users in the future, the
+system MUST provide a clear privacy notice, published before any
+non-owner account can register, describing what data is collected, how
+it is used (including AI processing via Gemini), and how long it is
+retained. Applicable data protection obligations (e.g., Egypt's
+Personal Data Protection Law) MUST be reviewed and addressed before
+public launch.
 
 Invoking an AI feature MAY send the user's full career content to
 Gemini. That invocation is consent to send. Canonical writes from AI
@@ -94,6 +121,28 @@ Security MUST be enforced server-side.
 * Uploaded files and external URLs MUST be validated.
 * Least-privilege access MUST be used.
 
+### 4.1 Authorization Enforcement Model
+
+FastAPI MUST be the sole authenticated gateway to PostgreSQL,
+connecting via a service-role key. Because a service-role key bypasses
+Supabase RLS, resource-ownership authorization MUST be enforced
+explicitly in the FastAPI Repository/Service layer on every query and
+mutation — this is the **primary** enforcement mechanism, not RLS.
+
+Supabase RLS MUST still be enabled on all user-owned tables as
+defense-in-depth, protecting against a leaked service-role key, direct
+Supabase Studio/dashboard access, or any future path where the frontend
+queries Supabase directly. If direct frontend-to-Supabase access is
+introduced later, RLS becomes the primary control for that path and
+MUST be re-verified via an explicit architectural decision.
+
+### 4.2 AI Rate Limiting
+
+AI-invoking endpoints MUST enforce a per-user rate limit to prevent
+runaway Gemini cost from retries, bugs, or abuse. Specific thresholds
+are an implementation detail left to individual feature specs, but the
+presence of a limit is a MUST for every AI-invoking endpoint.
+
 ---
 
 ## 5. Architecture
@@ -120,11 +169,25 @@ Gemini MUST be accessed only on the server through an `AIProvider`
 abstraction so another provider can be added later. Gemini credentials
 and raw model calls MUST NOT run in the browser.
 
-AI output MUST be treated as untrusted data.
+AI output MUST be treated as untrusted data, including when rendered in
+the UI: AI-generated text MUST NOT be injected as raw HTML.
 
 Using an AI feature constitutes consent to send needed career content
 to Gemini. That consent does NOT approve writing results into canonical
 user data.
+
+AI requests to Gemini MUST send only the profile sections relevant to
+the specific feature being invoked (e.g., only work-experience entries
+for a CV-tailoring request) rather than the full career record by
+default. Chat-style AI features MUST cap the conversation history sent
+per request to a bounded rolling window rather than replaying full
+history indefinitely.
+
+The system SHOULD maintain a canonical JSON representation of a user's
+full career record, generated on demand, so that AI features which
+genuinely need broader context (e.g., full-profile job matching) can
+consume a single structured document rather than assembling context
+from multiple queries.
 
 AI results MUST:
 
@@ -249,3 +312,27 @@ Versioning:
 * **MAJOR:** Incompatible principle change or removal
 * **MINOR:** New principle or materially expanded guidance
 * **PATCH:** Clarifications, wording, or non-semantic fixes
+
+---
+
+## Changelog
+
+**1.3.0 (2026-09-20)**
+* Clarified authorization model: FastAPI Repository/Service layer is
+  the primary enforcement mechanism (service-role key bypasses RLS);
+  RLS remains enabled as defense-in-depth (Section 4.1)
+* Added AI rate-limiting requirement for all AI-invoking endpoints
+  (Section 4.2)
+* Added AI context-minimization principles: send only relevant profile
+  sections, cap chat history window, and maintain an on-demand JSON
+  export of the full career record for features that need broad
+  context (Section 6)
+* Specified job matching as rule-based filtering + LLM scoring, no
+  vector-embedding requirement (Section 1)
+* Added account-deletion backup retention window (one month) and
+  disclosure requirement (Section 3)
+* Added privacy notice / data protection review requirement ahead of
+  public launch (Section 3)
+* Noted database migration tooling as an explicit later architectural
+  decision, alongside the FastAPI hosting decision (Section 2)
+* Added AI-output HTML-injection safeguard (Section 6)
